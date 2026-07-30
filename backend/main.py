@@ -24,9 +24,12 @@ def _patched_httpx_init(self, *args, **kwargs):
 
 httpx.Client.__init__ = _patched_httpx_init
 
-# Suppress insecure request warnings
-import urllib3
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+# Suppress insecure request warnings if urllib3 is available
+try:
+    import urllib3
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+except ImportError:
+    pass
 
 from backend.services.matching import match_recipes, get_all_ingredients
 
