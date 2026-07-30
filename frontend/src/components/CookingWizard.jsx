@@ -1,16 +1,42 @@
 import React, { useState, useEffect } from 'react';
-import { Volume2, VolumeX, ArrowLeft, ArrowRight, Play, Check, Flame, Clock, Users, Lightbulb } from 'lucide-react';
+import { Volume2, VolumeX, ArrowLeft, ArrowRight, Play, Check, Flame, Clock, Users, Lightbulb, RefreshCw } from 'lucide-react';
 import Timer from './Timer';
+import { fetchRecipeById } from '../services/api';
 
 export default function CookingWizard({ recipe, onBack }) {
+  const [fullRecipe, setFullRecipe] = useState(recipe);
+  const [loading, setLoading] = useState(false);
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [autoSpeak, setAutoSpeak] = useState(true);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [speechRate, setSpeechRate] = useState(0.9);
   const [completedSteps, setCompletedSteps] = useState([]);
 
-  const currentStep = recipe.steps[currentStepIndex];
-  const totalSteps = recipe.steps.length;
+  // Load full details if steps or ingredients are missing
+  useEffect(() => {
+    if (!recipe) return;
+    if (!recipe.steps || !recipe.ingredients || recipe.ingredients.length === 0) {
+      setLoading(true);
+      fetchRecipeById(recipe.id)
+        .then(data => {
+          setFullRecipe(data);
+        })
+        .catch(err => {
+          console.warn('Using provided recipe data fallback:', err);
+          setFullRecipe(recipe);
+        })
+        .finally(() => {
+          setLoading(false);
+        });
+    } else {
+      setFullRecipe(recipe);
+    }
+  }, [recipe]);
+
+  const steps = fullRecipe?.steps || [];
+  const ingredients = fullRecipe?.ingredients || [];
+  const totalSteps = steps.length;
+  const currentStep = steps[currentStepIndex] || null;
 
   // Speak function using Web Speech API
   const speakText = (text) => {
@@ -55,7 +81,7 @@ export default function CookingWizard({ recipe, onBack }) {
     return () => {
       stopSpeech();
     };
-  }, [currentStepIndex, autoSpeak]);
+  }, [currentStepIndex, autoSpeak, currentStep]);
 
   const handleNextStep = () => {
     if (!completedSteps.includes(currentStepIndex)) {
@@ -76,6 +102,29 @@ export default function CookingWizard({ recipe, onBack }) {
     const alertMessage = "Timer finished! You can proceed to the next step.";
     speakText(alertMessage);
   };
+
+  if (loading) {
+    return (
+      <div style={{ maxWidth: '900px', margin: '60px auto', textAlign: 'center', color: 'var(--text-muted)' }}>
+        <RefreshCw className="animate-spin" size={32} color="#f59e0b" style={{ margin: '0 auto 16px auto', display: 'block' }} />
+        Loading recipe steps & preparation guide...
+      </div>
+    );
+  }
+
+  if (!fullRecipe || totalSteps === 0) {
+    return (
+      <div style={{ maxWidth: '900px', margin: '40px auto', padding: '32px' }} className="glass-card">
+        <h3 style={{ marginBottom: '16px', color: '#fff' }}>Preparation details coming soon!</h3>
+        <p style={{ color: 'var(--text-muted)', marginBottom: '20px' }}>
+          Step-by-step instructions for {recipe?.name || 'this dish'} are being updated.
+        </p>
+        <button className="btn-secondary" onClick={onBack}>
+          <ArrowLeft size={16} /> Back to Recipe Explorer
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div style={{ maxWidth: '900px', margin: '0 auto', padding: '24px 20px' }}>
@@ -106,13 +155,13 @@ export default function CookingWizard({ recipe, onBack }) {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px' }}>
           <div>
             <span className="tag-pill" style={{ marginBottom: '8px' }}>
-              <Flame size={12} /> {recipe.region}
+              <Flame size={12} /> {fullRecipe.region || 'Indian'}
             </span>
-            <h2 style={{ fontSize: '1.8rem', marginTop: '6px' }}>{recipe.name}</h2>
+            <h2 style={{ fontSize: '1.8rem', marginTop: '6px' }}>{fullRecipe.name}</h2>
           </div>
           <div style={{ display: 'flex', gap: '16px', fontSize: '0.85rem', color: 'var(--text-muted)' }}>
-            <span><Clock size={14} color="#f59e0b" /> {recipe.cook_time_mins} mins</span>
-            <span><Users size={14} color="#06b6d4" /> {recipe.servings} Servings</span>
+            <span><Clock size={14} color="#f59e0b" /> {fullRecipe.cook_time_mins || 25} mins</span>
+            <span><Users size={14} color="#06b6d4" /> {fullRecipe.servings || 4} Servings</span>
           </div>
         </div>
       </div>
@@ -135,63 +184,65 @@ export default function CookingWizard({ recipe, onBack }) {
       </div>
 
       {/* Main Step Instruction Card */}
-      <div className="glass-card" style={{ padding: '36px 32px', marginBottom: '24px' }}>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
-          <span style={{
-            background: 'rgba(245, 158, 11, 0.2)',
-            color: '#fbbf24',
-            padding: '6px 14px',
-            borderRadius: '20px',
-            fontWeight: 700,
-            fontSize: '0.9rem'
-          }}>
-            STEP {currentStep.step_number}
-          </span>
+      {currentStep && (
+        <div className="glass-card" style={{ padding: '36px 32px', marginBottom: '24px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+            <span style={{
+              background: 'rgba(245, 158, 11, 0.2)',
+              color: '#fbbf24',
+              padding: '6px 14px',
+              borderRadius: '20px',
+              fontWeight: 700,
+              fontSize: '0.9rem'
+            }}>
+              STEP {currentStep.step_number || currentStepIndex + 1}
+            </span>
 
-          <button 
-            className="btn-primary" 
-            onClick={() => isSpeaking ? stopSpeech() : speakText(`Step ${currentStep.step_number}. ${currentStep.instruction}`)}
-            style={{ padding: '6px 16px', fontSize: '0.85rem' }}
-          >
-            {isSpeaking ? (
-              <>
-                <VolumeX size={16} /> Stop Voice
-              </>
-            ) : (
-              <>
-                <Volume2 size={16} /> Read Aloud 🔊
-              </>
-            )}
-          </button>
-        </div>
-
-        <h3 style={{ fontSize: '1.45rem', lineHeight: '1.6', fontWeight: 500, color: '#f8fafc', marginBottom: '20px' }}>
-          {currentStep.instruction}
-        </h3>
-
-        {/* Optional Chef Tip */}
-        {currentStep.tips && (
-          <div style={{
-            background: 'rgba(6, 182, 212, 0.08)',
-            border: '1px solid rgba(6, 182, 212, 0.25)',
-            padding: '12px 16px',
-            borderRadius: '12px',
-            fontSize: '0.9rem',
-            color: '#38bdf8',
-            display: 'flex',
-            alignItems: 'flex-start',
-            gap: '10px'
-          }}>
-            <Lightbulb size={18} color="#38bdf8" style={{ minWidth: '18px', marginTop: '2px' }} />
-            <div>
-              <strong>Chef Tip:</strong> {currentStep.tips}
-            </div>
+            <button 
+              className="btn-primary" 
+              onClick={() => isSpeaking ? stopSpeech() : speakText(`Step ${currentStep.step_number || currentStepIndex + 1}. ${currentStep.instruction}`)}
+              style={{ padding: '6px 16px', fontSize: '0.85rem' }}
+            >
+              {isSpeaking ? (
+                <>
+                  <VolumeX size={16} /> Stop Voice
+                </>
+              ) : (
+                <>
+                  <Volume2 size={16} /> Read Aloud 🔊
+                </>
+              )}
+            </button>
           </div>
-        )}
-      </div>
+
+          <h3 style={{ fontSize: '1.45rem', lineHeight: '1.6', fontWeight: 500, color: '#f8fafc', marginBottom: '20px' }}>
+            {currentStep.instruction}
+          </h3>
+
+          {/* Optional Chef Tip */}
+          {currentStep.tips && (
+            <div style={{
+              background: 'rgba(6, 182, 212, 0.08)',
+              border: '1px solid rgba(6, 182, 212, 0.25)',
+              padding: '12px 16px',
+              borderRadius: '12px',
+              fontSize: '0.9rem',
+              color: '#38bdf8',
+              display: 'flex',
+              alignItems: 'flex-start',
+              gap: '10px'
+            }}>
+              <Lightbulb size={18} color="#38bdf8" style={{ minWidth: '18px', marginTop: '2px' }} />
+              <div>
+                <strong>Chef Tip:</strong> {currentStep.tips}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Step Countdown Timer Component */}
-      {currentStep.timer_seconds && (
+      {currentStep?.timer_seconds && (
         <Timer 
           durationSeconds={currentStep.timer_seconds} 
           onComplete={handleTimerComplete}
@@ -222,30 +273,32 @@ export default function CookingWizard({ recipe, onBack }) {
       </div>
 
       {/* Recipe Ingredients Reference Accordion */}
-      <div className="glass-card" style={{ padding: '24px', marginTop: '36px' }}>
-        <h4 style={{ fontSize: '1.1rem', marginBottom: '14px', color: 'var(--text-muted)' }}>
-          Recipe Ingredients Checklist:
-        </h4>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '10px' }}>
-          {recipe.ingredients.map((ing, idx) => (
-            <div key={idx} style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '8px',
-              fontSize: '0.85rem',
-              color: ing.is_optional ? 'var(--text-dim)' : 'var(--text-main)',
-              padding: '6px 10px',
-              borderRadius: '8px',
-              background: 'rgba(255, 255, 255, 0.03)'
-            }}>
-              <Check size={14} color="#f59e0b" />
-              <span>
-                <strong>{ing.quantity} {ing.unit}</strong> {ing.name} {ing.is_optional && '(optional)'}
-              </span>
-            </div>
-          ))}
+      {ingredients.length > 0 && (
+        <div className="glass-card" style={{ padding: '24px', marginTop: '36px' }}>
+          <h4 style={{ fontSize: '1.1rem', marginBottom: '14px', color: 'var(--text-muted)' }}>
+            Recipe Ingredients Checklist:
+          </h4>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '10px' }}>
+            {ingredients.map((ing, idx) => (
+              <div key={idx} style={{
+                display: 'flex',
+                alignItems: 'center',
+                gap: '8px',
+                fontSize: '0.85rem',
+                color: ing.is_optional ? 'var(--text-dim)' : 'var(--text-main)',
+                padding: '6px 10px',
+                borderRadius: '8px',
+                background: 'rgba(255, 255, 255, 0.03)'
+              }}>
+                <Check size={14} color="#f59e0b" />
+                <span>
+                  <strong>{ing.quantity} {ing.unit}</strong> {ing.name} {ing.is_optional && '(optional)'}
+                </span>
+              </div>
+            ))}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
