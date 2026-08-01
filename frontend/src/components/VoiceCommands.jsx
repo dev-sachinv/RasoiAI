@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Mic, MicOff, AlertCircle, Sparkles, CheckCircle2 } from 'lucide-react';
+import { Mic, MicOff, AlertCircle } from 'lucide-react';
 
 export default function VoiceCommands({
   onNext,
@@ -15,11 +15,20 @@ export default function VoiceCommands({
   const recognitionRef = useRef(null);
   const lastCommandTimeRef = useRef(0);
   const isListeningStateRef = useRef(false);
+  const clearBadgeTimeoutRef = useRef(null);
 
   // Keep ref synchronized with state for callback closures
   useEffect(() => {
     isListeningStateRef.current = isListening;
   }, [isListening]);
+
+  const updateBadge = (text) => {
+    setLastHeardCommand(text);
+    if (clearBadgeTimeoutRef.current) clearTimeout(clearBadgeTimeoutRef.current);
+    clearBadgeTimeoutRef.current = setTimeout(() => {
+      setLastHeardCommand('');
+    }, 2500);
+  };
 
   // Real-time instant command matcher
   const processTranscript = (rawText) => {
@@ -27,43 +36,43 @@ export default function VoiceCommands({
     const text = rawText.toLowerCase().trim();
     const now = Date.now();
     
-    // Cooldown guard to prevent rapid multi-triggering
-    if (now - lastCommandTimeRef.current < 1200) return;
+    // Reduced 600ms cooldown for fast consecutive command execution
+    if (now - lastCommandTimeRef.current < 600) return;
 
-    // 1. Pause Timer Command
-    if (/\b(pause|stop timer|hold|wait|freeze|pause time)\b/i.test(text)) {
+    // 1. Pause Timer Command (checked first to prioritize pause)
+    if (text.includes('pause') || text.includes('stop timer') || text.includes('hold') || text.includes('wait') || text.includes('freeze')) {
       lastCommandTimeRef.current = now;
-      setLastHeardCommand('⏸️ Pause Timer');
+      updateBadge('⏸️ Pause Timer');
       if (onPauseTimer) onPauseTimer();
     }
     // 2. Start Timer Command
-    else if (/\b(start timer|start the timer|timer start|begin timer|set timer|play timer|run timer|time start|start|timer)\b/i.test(text)) {
+    else if (text.includes('start timer') || text.includes('begin timer') || text.includes('set timer') || text.includes('play timer') || text.includes('run timer') || text.includes('timer') || text.includes('start')) {
       lastCommandTimeRef.current = now;
-      setLastHeardCommand('▶️ Start Timer');
+      updateBadge('▶️ Start Timer');
       if (onStartTimer) onStartTimer();
     }
     // 3. Previous / Back Command
-    else if (/\b(back|bak|previous|prev|go back|backward|before|prior)\b/i.test(text)) {
+    else if (text.includes('back') || text.includes('previous') || text.includes('prev') || text.includes('go back') || text.includes('backward')) {
       lastCommandTimeRef.current = now;
-      setLastHeardCommand('◀️ Previous Step');
+      updateBadge('◀️ Previous Step');
       if (onPrevious) onPrevious();
     }
     // 4. Next Step Command
-    else if (/\b(next|nekst|forward|ahead|continue|proceed|further)\b/i.test(text)) {
+    else if (text.includes('next') || text.includes('forward') || text.includes('ahead') || text.includes('continue') || text.includes('proceed')) {
       lastCommandTimeRef.current = now;
-      setLastHeardCommand('▶️ Next Step');
+      updateBadge('▶️ Next Step');
       if (onNext) onNext();
     }
     // 5. Repeat Step Command
-    else if (/\b(repeat|again|say again|reread|read|one more|pardon)\b/i.test(text)) {
+    else if (text.includes('repeat') || text.includes('again') || text.includes('say again') || text.includes('reread') || text.includes('read')) {
       lastCommandTimeRef.current = now;
-      setLastHeardCommand('🔁 Repeat Instruction');
+      updateBadge('🔁 Repeat Instruction');
       if (onRepeat) onRepeat();
     }
-    // 6. Stop Listening Command
-    else if (/\b(stop listening|turn off mic|mic off|mute|close mic)\b/i.test(text)) {
+    // 6. Stop Mic Command
+    else if (text.includes('stop listening') || text.includes('turn off mic') || text.includes('mic off') || text.includes('close mic')) {
       lastCommandTimeRef.current = now;
-      setLastHeardCommand('⏹️ Mic OFF');
+      updateBadge('⏹️ Mic OFF');
       stopListening();
     }
   };
@@ -79,7 +88,7 @@ export default function VoiceCommands({
       const recognition = new SpeechRecognition();
       recognition.continuous = true;
       recognition.interimResults = true; // Enables instant sub-100ms response!
-      recognition.lang = 'en-US'; // Matches both US & Indian English phonetics
+      recognition.lang = 'en-US';
 
       recognition.onresult = (event) => {
         for (let i = event.resultIndex; i < event.results.length; ++i) {
@@ -93,25 +102,22 @@ export default function VoiceCommands({
         if (event.error === 'not-allowed') {
           setErrorMessage('Microphone permission blocked. Please allow mic in browser settings.');
           setIsListening(false);
-        } else if (event.error === 'no-speech') {
-          // Normal transient pause
-        } else if (event.error === 'aborted') {
-          // Handled restart
-        } else {
-          setErrorMessage(`Mic notice: ${event.error}`);
+          isListeningStateRef.current = false;
         }
       };
 
       recognition.onend = () => {
-        // Auto-restart seamless loop if user wants mic active
-        if (isListeningStateRef.current && recognitionRef.current) {
-          try {
-            recognitionRef.current.start();
-          } catch (e) {
-            // Ignore if already active
-          }
-        } else {
-          setIsListening(false);
+        // Continuous auto-restart loop with a small 200ms delay so Chrome never drops the mic!
+        if (isListeningStateRef.current) {
+          setTimeout(() => {
+            if (isListeningStateRef.current && recognitionRef.current) {
+              try {
+                recognitionRef.current.start();
+              } catch (e) {
+                // Ignore if already active
+              }
+            }
+          }, 200);
         }
       };
 
@@ -207,7 +213,7 @@ export default function VoiceCommands({
         {isListening ? (
           <>
             <Mic size={18} className="animate-pulse" color="#f43f5e" />
-            <span>Mic ON (Listening Live)</span>
+            <span>Mic ON (Always Listening)</span>
           </>
         ) : (
           <>
