@@ -222,7 +222,9 @@ export default function CookingWizard({ recipe, onBack }) {
   };
 
   const handleTimerComplete = () => {
-    const alertMessage = "Timer finished! You can proceed to the next step.";
+    setHasUserInteracted(true);
+    const stepNum = currentStep?.step_number || (currentStepIndex + 1);
+    const alertMessage = `Timer completed for step ${stepNum}! You can now proceed to the next step.`;
     speakText(alertMessage);
   };
 
