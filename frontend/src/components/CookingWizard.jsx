@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Volume2, VolumeX, ArrowLeft, ArrowRight, Play, Check, Flame, Clock, Users, Lightbulb, RefreshCw, Sparkles, AlertCircle } from 'lucide-react';
+import { Volume2, VolumeX, ArrowLeft, ArrowRight, Play, Check, Flame, Clock, Users, Lightbulb, RefreshCw, Sparkles, AlertCircle, X } from 'lucide-react';
 import Timer from './Timer';
+import VoiceCommands from './VoiceCommands';
 import { fetchRecipeById } from '../services/api';
 
 export default function CookingWizard({ recipe, onBack }) {
@@ -14,6 +15,8 @@ export default function CookingWizard({ recipe, onBack }) {
   const [availableVoices, setAvailableVoices] = useState([]);
   const [hasUserInteracted, setHasUserInteracted] = useState(false);
   const [speechEngineNotice, setSpeechEngineNotice] = useState('');
+  const [timerCommand, setTimerCommand] = useState(null);
+  const [showVoiceHint, setShowVoiceHint] = useState(true);
 
   // Refs to prevent garbage collection of speech objects & audio elements
   const utteranceRef = useRef(null);
@@ -259,8 +262,20 @@ export default function CookingWizard({ recipe, onBack }) {
           <ArrowLeft size={16} /> Exit Cooking Mode
         </button>
 
-        {/* Voice Auto-Play Toggle & Test Voice Button */}
+        {/* Voice Auto-Play Toggle, Mic Voice Commands & Test Voice Button */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
+          <VoiceCommands 
+            onNext={handleNextStep}
+            onPrevious={handlePrevStep}
+            onRepeat={() => {
+              if (currentStep) {
+                speakText(`Step ${currentStep.step_number || currentStepIndex + 1}. ${currentStep.instruction}`);
+              }
+            }}
+            onStartTimer={() => setTimerCommand('start')}
+            onPauseTimer={() => setTimerCommand('pause')}
+          />
+
           <button 
             className="btn-secondary" 
             onClick={() => {
@@ -290,6 +305,25 @@ export default function CookingWizard({ recipe, onBack }) {
           </button>
         </div>
       </div>
+
+      {/* One-Time Dismissible Voice Onboarding Hint Banner */}
+      {showVoiceHint && (
+        <div style={{
+          background: 'rgba(6, 182, 212, 0.12)',
+          border: '1px solid rgba(6, 182, 212, 0.3)',
+          borderRadius: '12px',
+          padding: '10px 16px',
+          fontSize: '0.85rem',
+          color: '#38bdf8',
+          display: 'flex',
+          alignItems: 'center',
+          justify: 'space-between',
+          marginBottom: '20px'
+        }}>
+          <span>💡 <strong>Hands-free Voice Commands:</strong> Enable Mic above and try saying: <i>"next"</i>, <i>"back"</i>, <i>"repeat"</i>, <i>"start timer"</i>, or <i>"pause"</i>.</span>
+          <X size={16} style={{ cursor: 'pointer', marginLeft: '12px', minWidth: '16px' }} onClick={() => setShowVoiceHint(false)} />
+        </div>
+      )}
 
       {/* Speech Active Status Indicator */}
       {speechEngineNotice && (
@@ -440,6 +474,7 @@ export default function CookingWizard({ recipe, onBack }) {
           durationSeconds={currentStep.timer_seconds} 
           onComplete={handleTimerComplete}
           stepTitle={`Step ${currentStep.step_number}`}
+          timerCommand={timerCommand}
         />
       )}
 

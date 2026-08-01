@@ -31,7 +31,7 @@ function playTimerChime() {
   }
 }
 
-export default function Timer({ durationSeconds, onComplete, stepTitle }) {
+export default function Timer({ durationSeconds, onComplete, stepTitle, timerCommand }) {
   const [timeLeft, setTimeLeft] = useState(durationSeconds);
   const [isRunning, setIsRunning] = useState(false);
   const [isFinished, setIsFinished] = useState(false);
@@ -43,6 +43,16 @@ export default function Timer({ durationSeconds, onComplete, stepTitle }) {
     setIsFinished(false);
     hasTriggeredCompleteRef.current = false;
   }, [durationSeconds]);
+
+  // Handle external voice timer commands ('start', 'pause')
+  useEffect(() => {
+    if (!timerCommand) return;
+    if (timerCommand === 'start' && !isFinished) {
+      setIsRunning(true);
+    } else if (timerCommand === 'pause') {
+      setIsRunning(false);
+    }
+  }, [timerCommand, isFinished]);
 
   useEffect(() => {
     let interval = null;
