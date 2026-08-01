@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Volume2, VolumeX, ArrowLeft, ArrowRight, Play, Check, Flame, Clock, Users, Lightbulb, RefreshCw, Sparkles } from 'lucide-react';
+import { Volume2, VolumeX, ArrowLeft, ArrowRight, Play, Check, Flame, Clock, Users, Lightbulb, RefreshCw, Sparkles, AlertCircle } from 'lucide-react';
 import Timer from './Timer';
 import { fetchRecipeById } from '../services/api';
 
@@ -13,6 +13,11 @@ export default function CookingWizard({ recipe, onBack }) {
   const [completedSteps, setCompletedSteps] = useState([]);
   const [availableVoices, setAvailableVoices] = useState([]);
   const [hasUserInteracted, setHasUserInteracted] = useState(false);
+  const [speechEngineNotice, setSpeechEngineNotice] = useState('');
+
+  // Refs to prevent garbage collection of speech objects & audio elements
+  const utteranceRef = useRef(null);
+  const audioFallbackRef = useRef(null);
 
   // Load voices asynchronously for Web Speech API
   useEffect(() => {
@@ -55,53 +60,129 @@ export default function CookingWizard({ recipe, onBack }) {
   const totalSteps = steps.length;
   const currentStep = steps[currentStepIndex] || null;
 
-  // Robust speak function using Web Speech API
+  // Fallback HTML5 Audio TTS Player
+  const playAudioFallback = (text) => {
+    try {
+      if (audioFallbackRef.current) {
+        audioFallbackRef.current.pause();
+      }
+      const cleanText = text.replace(/[^a-zA-Z0-9\s.,]/g, '').slice(0, 180);
+      const audioUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(cleanText)}&tl=en&client=tw-ob`;
+      
+      const audio = new Audio(audioUrl);
+      audioFallbackRef.current = audio;
+      
+      audio.onplay = () => {
+        setIsSpeaking(true);
+        setSpeechEngineNotice('Playing audio voice stream...');
+      };
+      audio.onended = () => {
+        setIsSpeaking(false);
+        setSpeechEngineNotice('');
+      };
+      audio.onerror = () => {
+        setIsSpeaking(false);
+        setSpeechEngineNotice('Audio fallback unavailable.');
+      };
+
+      const playPromise = audio.play();
+      if (playPromise !== undefined) {
+        playPromise.catch(err => {
+          console.warn('Audio fallback playback error:', err);
+          setIsSpeaking(false);
+        });
+      }
+    } catch (e) {
+      console.warn('Audio fallback error:', e);
+      setIsSpeaking(false);
+    }
+  };
+
+  // Dual-Engine Speech Function (Web Speech API + Audio Fallback)
   const speakText = (text) => {
+    stopSpeech(); // Stop all previous audio/speech
+    setHasUserInteracted(true);
+
     if (!('speechSynthesis' in window)) {
-      console.warn('Web Speech API is not supported in this browser.');
+      setSpeechEngineNotice('Web Speech API missing, using audio stream...');
+      playAudioFallback(text);
       return;
     }
 
-    // Cancel any ongoing speech & resume if stuck
-    window.speechSynthesis.cancel();
-    if (window.speechSynthesis.paused) {
-      window.speechSynthesis.resume();
+    try {
+      window.speechSynthesis.cancel();
+      if (window.speechSynthesis.paused) {
+        window.speechSynthesis.resume();
+      }
+
+      const utterance = new SpeechSynthesisUtterance(text);
+      utteranceRef.current = utterance; // Prevent garbage collection!
+
+      utterance.rate = speechRate;
+      utterance.volume = 1.0;
+      utterance.pitch = 1.0;
+
+      // Select standard English voice
+      const voicesList = availableVoices.length > 0 ? availableVoices : window.speechSynthesis.getVoices();
+      const standardEnglishVoice = voicesList.find(v => (v.lang === 'en-US' || v.lang === 'en-GB') && !v.name.includes('Hindi'))
+                                || voicesList.find(v => v.lang && v.lang.startsWith('en'))
+                                || voicesList[0];
+
+      if (standardEnglishVoice) {
+        utterance.voice = standardEnglishVoice;
+        utterance.lang = standardEnglishVoice.lang;
+      } else {
+        utterance.lang = 'en-US';
+      }
+
+      let speechStarted = false;
+
+      utterance.onstart = () => {
+        speechStarted = true;
+        setIsSpeaking(true);
+        setSpeechEngineNotice(`Speaking (${standardEnglishVoice?.name || 'English'})...`);
+      };
+
+      utterance.onend = () => {
+        setIsSpeaking(false);
+        setSpeechEngineNotice('');
+        utteranceRef.current = null;
+      };
+
+      utterance.onerror = (e) => {
+        console.warn('Web Speech API error, switching to Audio fallback:', e);
+        setIsSpeaking(false);
+        utteranceRef.current = null;
+        playAudioFallback(text);
+      };
+
+      window.speechSynthesis.speak(utterance);
+
+      // Backup check: if Web Speech API stays silent after 700ms, use Audio fallback!
+      setTimeout(() => {
+        if (!speechStarted && !window.speechSynthesis.speaking) {
+          console.warn('Web Speech API did not trigger, starting Audio Stream fallback...');
+          playAudioFallback(text);
+        }
+      }, 700);
+
+    } catch (err) {
+      console.warn('Speech synthesis failed, using audio fallback:', err);
+      playAudioFallback(text);
     }
-
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = speechRate;
-    utterance.volume = 1.0;
-    utterance.pitch = 1.0;
-    
-    // Select best available English voice
-    const voicesList = availableVoices.length > 0 ? availableVoices : window.speechSynthesis.getVoices();
-    const standardEnglishVoice = voicesList.find(v => (v.lang === 'en-US' || v.lang === 'en-GB') && !v.name.includes('Hindi'))
-                              || voicesList.find(v => v.lang && v.lang.startsWith('en'))
-                              || voicesList[0];
-
-    if (standardEnglishVoice) {
-      utterance.voice = standardEnglishVoice;
-      utterance.lang = standardEnglishVoice.lang;
-    } else {
-      utterance.lang = 'en-US';
-    }
-
-    utterance.onstart = () => setIsSpeaking(true);
-    utterance.onend = () => setIsSpeaking(false);
-    utterance.onerror = (e) => {
-      console.warn('Speech synthesis error:', e);
-      setIsSpeaking(false);
-    };
-
-    window.speechSynthesis.speak(utterance);
-    setHasUserInteracted(true);
   };
 
   const stopSpeech = () => {
     if ('speechSynthesis' in window) {
       window.speechSynthesis.cancel();
-      setIsSpeaking(false);
     }
+    if (audioFallbackRef.current) {
+      audioFallbackRef.current.pause();
+      audioFallbackRef.current = null;
+    }
+    setIsSpeaking(false);
+    setSpeechEngineNotice('');
+    utteranceRef.current = null;
   };
 
   // Auto speak on step change if autoSpeak is enabled and user has interacted
@@ -161,7 +242,7 @@ export default function CookingWizard({ recipe, onBack }) {
         <p style={{ color: 'var(--text-muted)', marginBottom: '20px' }}>
           Step-by-step instructions for {recipe?.name || 'this dish'} are being updated.
         </p>
-        <button className="btn-secondary" onClick={onBack}>
+        <button className="btn-secondary" onClick={() => { stopSpeech(); onBack(); }}>
           <ArrowLeft size={16} /> Back to Recipe Explorer
         </button>
       </div>
@@ -207,6 +288,25 @@ export default function CookingWizard({ recipe, onBack }) {
           </button>
         </div>
       </div>
+
+      {/* Speech Active Status Indicator */}
+      {speechEngineNotice && (
+        <div style={{
+          background: 'rgba(16, 185, 129, 0.15)',
+          border: '1px solid rgba(16, 185, 129, 0.3)',
+          padding: '8px 16px',
+          borderRadius: '8px',
+          marginBottom: '16px',
+          fontSize: '0.85rem',
+          color: '#34d399',
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px'
+        }}>
+          <Volume2 size={16} className="animate-pulse" />
+          <span>{speechEngineNotice}</span>
+        </div>
+      )}
 
       {/* Autoplay Browser Notice Banner */}
       {!hasUserInteracted && (
