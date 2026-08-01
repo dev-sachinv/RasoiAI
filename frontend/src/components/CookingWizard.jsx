@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Volume2, VolumeX, ArrowLeft, ArrowRight, Play, Check, Flame, Clock, Users, Lightbulb, RefreshCw } from 'lucide-react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Volume2, VolumeX, ArrowLeft, ArrowRight, Play, Check, Flame, Clock, Users, Lightbulb, RefreshCw, Sparkles } from 'lucide-react';
 import Timer from './Timer';
 import { fetchRecipeById } from '../services/api';
 
@@ -9,8 +9,25 @@ export default function CookingWizard({ recipe, onBack }) {
   const [currentStepIndex, setCurrentStepIndex] = useState(0);
   const [autoSpeak, setAutoSpeak] = useState(true);
   const [isSpeaking, setIsSpeaking] = useState(false);
-  const [speechRate, setSpeechRate] = useState(0.9);
+  const [speechRate, setSpeechRate] = useState(0.95);
   const [completedSteps, setCompletedSteps] = useState([]);
+  const [availableVoices, setAvailableVoices] = useState([]);
+  const [hasUserInteracted, setHasUserInteracted] = useState(false);
+
+  // Load voices asynchronously for Web Speech API
+  useEffect(() => {
+    if (!('speechSynthesis' in window)) return;
+
+    const loadVoices = () => {
+      const v = window.speechSynthesis.getVoices();
+      if (v && v.length > 0) {
+        setAvailableVoices(v);
+      }
+    };
+
+    loadVoices();
+    window.speechSynthesis.onvoiceschanged = loadVoices;
+  }, []);
 
   // Load full details if steps or ingredients are missing
   useEffect(() => {
@@ -38,31 +55,46 @@ export default function CookingWizard({ recipe, onBack }) {
   const totalSteps = steps.length;
   const currentStep = steps[currentStepIndex] || null;
 
-  // Speak function using Web Speech API
+  // Robust speak function using Web Speech API
   const speakText = (text) => {
     if (!('speechSynthesis' in window)) {
-      console.warn('Web Speech API not supported in this browser.');
+      console.warn('Web Speech API is not supported in this browser.');
       return;
     }
 
-    window.speechSynthesis.cancel(); // Stop any active speech
+    // Cancel any ongoing speech & resume if stuck
+    window.speechSynthesis.cancel();
+    if (window.speechSynthesis.paused) {
+      window.speechSynthesis.resume();
+    }
 
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = speechRate;
+    utterance.volume = 1.0;
+    utterance.pitch = 1.0;
     
-    // Select clean standard English voice (en-US or en-GB)
-    const voices = window.speechSynthesis.getVoices();
-    const standardEnglishVoice = voices.find(v => (v.lang === 'en-US' || v.lang === 'en-GB') && !v.name.includes('Hindi'));
+    // Select best available English voice
+    const voicesList = availableVoices.length > 0 ? availableVoices : window.speechSynthesis.getVoices();
+    const standardEnglishVoice = voicesList.find(v => (v.lang === 'en-US' || v.lang === 'en-GB') && !v.name.includes('Hindi'))
+                              || voicesList.find(v => v.lang && v.lang.startsWith('en'))
+                              || voicesList[0];
+
     if (standardEnglishVoice) {
       utterance.voice = standardEnglishVoice;
+      utterance.lang = standardEnglishVoice.lang;
+    } else {
+      utterance.lang = 'en-US';
     }
-    utterance.lang = 'en-US';
 
     utterance.onstart = () => setIsSpeaking(true);
     utterance.onend = () => setIsSpeaking(false);
-    utterance.onerror = () => setIsSpeaking(false);
+    utterance.onerror = (e) => {
+      console.warn('Speech synthesis error:', e);
+      setIsSpeaking(false);
+    };
 
     window.speechSynthesis.speak(utterance);
+    setHasUserInteracted(true);
   };
 
   const stopSpeech = () => {
@@ -72,10 +104,10 @@ export default function CookingWizard({ recipe, onBack }) {
     }
   };
 
-  // Auto speak on step change if autoSpeak is enabled
+  // Auto speak on step change if autoSpeak is enabled and user has interacted
   useEffect(() => {
-    if (autoSpeak && currentStep) {
-      const speechPrompt = `Step ${currentStep.step_number}. ${currentStep.instruction}`;
+    if (autoSpeak && currentStep && hasUserInteracted) {
+      const speechPrompt = `Step ${currentStep.step_number || currentStepIndex + 1}. ${currentStep.instruction}`;
       speakText(speechPrompt);
     }
     return () => {
@@ -84,17 +116,27 @@ export default function CookingWizard({ recipe, onBack }) {
   }, [currentStepIndex, autoSpeak, currentStep]);
 
   const handleNextStep = () => {
+    setHasUserInteracted(true);
     if (!completedSteps.includes(currentStepIndex)) {
       setCompletedSteps([...completedSteps, currentStepIndex]);
     }
     if (currentStepIndex < totalSteps - 1) {
-      setCurrentStepIndex(prev => prev + 1);
+      const nextIdx = currentStepIndex + 1;
+      setCurrentStepIndex(nextIdx);
+      if (autoSpeak && steps[nextIdx]) {
+        speakText(`Step ${steps[nextIdx].step_number || nextIdx + 1}. ${steps[nextIdx].instruction}`);
+      }
     }
   };
 
   const handlePrevStep = () => {
+    setHasUserInteracted(true);
     if (currentStepIndex > 0) {
-      setCurrentStepIndex(prev => prev - 1);
+      const prevIdx = currentStepIndex - 1;
+      setCurrentStepIndex(prevIdx);
+      if (autoSpeak && steps[prevIdx]) {
+        speakText(`Step ${steps[prevIdx].step_number || prevIdx + 1}. ${steps[prevIdx].instruction}`);
+      }
     }
   };
 
@@ -129,16 +171,24 @@ export default function CookingWizard({ recipe, onBack }) {
   return (
     <div style={{ maxWidth: '900px', margin: '0 auto', padding: '24px 20px' }}>
       {/* Header Bar */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px' }}>
-        <button className="btn-secondary" onClick={onBack}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '24px', flexWrap: 'wrap', gap: '12px' }}>
+        <button className="btn-secondary" onClick={() => { stopSpeech(); onBack(); }}>
           <ArrowLeft size={16} /> Exit Cooking Mode
         </button>
 
-        {/* Voice Auto-Play Toggle & Controls */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+        {/* Voice Auto-Play Toggle & Test Voice Button */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap' }}>
           <button 
             className="btn-secondary" 
-            onClick={() => setAutoSpeak(!autoSpeak)}
+            onClick={() => {
+              const newAuto = !autoSpeak;
+              setAutoSpeak(newAuto);
+              if (newAuto && currentStep) {
+                speakText(`Step ${currentStep.step_number || currentStepIndex + 1}. ${currentStep.instruction}`);
+              } else {
+                stopSpeech();
+              }
+            }}
             style={{
               borderColor: autoSpeak ? 'var(--accent-saffron)' : 'var(--border-glass)',
               color: autoSpeak ? '#fbbf24' : 'var(--text-muted)'
@@ -147,8 +197,49 @@ export default function CookingWizard({ recipe, onBack }) {
             {autoSpeak ? <Volume2 size={16} /> : <VolumeX size={16} />}
             Auto-read: {autoSpeak ? 'ON' : 'OFF'}
           </button>
+
+          <button 
+            className="btn-secondary"
+            onClick={() => speakText("Voice audio is working perfectly! Welcome to Rasoi AI voice cooking assistant.")}
+            style={{ fontSize: '0.8rem', padding: '6px 12px' }}
+          >
+            🔊 Test Audio Voice
+          </button>
         </div>
       </div>
+
+      {/* Autoplay Browser Notice Banner */}
+      {!hasUserInteracted && (
+        <div style={{
+          background: 'rgba(245, 158, 11, 0.15)',
+          border: '1px solid rgba(245, 158, 11, 0.3)',
+          padding: '12px 18px',
+          borderRadius: '12px',
+          marginBottom: '20px',
+          fontSize: '0.88rem',
+          color: '#fef08a',
+          display: 'flex',
+          alignItems: 'center',
+          justify: 'space-between',
+          gap: '12px'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <Volume2 size={18} color="#fbbf24" />
+            <span>Tap below to start English voice narration for this recipe.</span>
+          </div>
+          <button 
+            className="btn-primary"
+            onClick={() => {
+              if (currentStep) {
+                speakText(`Welcome to ${fullRecipe.name}. Step 1. ${currentStep.instruction}`);
+              }
+            }}
+            style={{ padding: '6px 14px', fontSize: '0.8rem' }}
+          >
+            🔊 Start Voice Assistant
+          </button>
+        </div>
+      )}
 
       {/* Recipe Header Card */}
       <div className="glass-card" style={{ padding: '24px', marginBottom: '28px' }}>
@@ -186,7 +277,7 @@ export default function CookingWizard({ recipe, onBack }) {
       {/* Main Step Instruction Card */}
       {currentStep && (
         <div className="glass-card" style={{ padding: '36px 32px', marginBottom: '24px' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
             <span style={{
               background: 'rgba(245, 158, 11, 0.2)',
               color: '#fbbf24',
@@ -201,15 +292,15 @@ export default function CookingWizard({ recipe, onBack }) {
             <button 
               className="btn-primary" 
               onClick={() => isSpeaking ? stopSpeech() : speakText(`Step ${currentStep.step_number || currentStepIndex + 1}. ${currentStep.instruction}`)}
-              style={{ padding: '6px 16px', fontSize: '0.85rem' }}
+              style={{ padding: '8px 20px', fontSize: '0.9rem' }}
             >
               {isSpeaking ? (
                 <>
-                  <VolumeX size={16} /> Stop Voice
+                  <VolumeX size={18} /> Stop Voice ⏹️
                 </>
               ) : (
                 <>
-                  <Volume2 size={16} /> Read Aloud 🔊
+                  <Volume2 size={18} /> Read Aloud 🔊
                 </>
               )}
             </button>
@@ -266,7 +357,7 @@ export default function CookingWizard({ recipe, onBack }) {
             Next Step <ArrowRight size={16} />
           </button>
         ) : (
-          <button className="btn-primary" onClick={onBack} style={{ background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)' }}>
+          <button className="btn-primary" onClick={() => { stopSpeech(); onBack(); }} style={{ background: 'linear-gradient(135deg, #10b981 0%, #059669 100%)' }}>
             <Check size={16} /> Complete Cooking 🎉
           </button>
         )}
