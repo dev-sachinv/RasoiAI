@@ -1,10 +1,11 @@
 import React from 'react';
-import { Clock, Users, Flame, Volume2, AlertCircle, CheckCircle2 } from 'lucide-react';
+import { Clock, Users, Flame, Volume2, AlertCircle, CheckCircle2, Sparkles } from 'lucide-react';
 
-export default function RecipeCard({ item, onSelectRecipe, isMatchMode = false }) {
-  const recipe = isMatchMode ? item.recipe : item;
-  const matchPercent = isMatchMode ? item.match_percent : null;
-  const missing = isMatchMode ? item.missing_ingredients : [];
+export default function RecipeCard({ item, onSelectRecipe, isMatchMode = false, isAiGenerated = false }) {
+  const recipe = (isMatchMode && item?.recipe) ? item.recipe : item;
+  const matchPercent = isMatchMode ? item?.match_percent : null;
+  const missing = isMatchMode ? (item?.missing_ingredients || []) : [];
+  const isAi = isAiGenerated || recipe?.source === 'ai_generated' || item?.source === 'ai_generated';
 
   return (
     <div className="glass-card" style={{
@@ -17,12 +18,19 @@ export default function RecipeCard({ item, onSelectRecipe, isMatchMode = false }
     }}>
       {/* Top Banner & Region */}
       <div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '12px' }}>
-          <span className="tag-pill">
-            <Flame size={12} /> {recipe.region}
-          </span>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px', marginBottom: '12px', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', alignItems: 'center' }}>
+            <span className="tag-pill">
+              <Flame size={12} /> {recipe.region || 'Indian'}
+            </span>
+            {isAi && (
+              <span className="tag-pill" style={{ background: 'rgba(168, 85, 247, 0.2)', color: '#c084fc', borderColor: 'rgba(168, 85, 247, 0.4)', fontWeight: 600 }}>
+                <Sparkles size={12} /> ✨ AI-suggested recipe
+              </span>
+            )}
+          </div>
           
-          {isMatchMode && matchPercent !== null && (
+          {isMatchMode && matchPercent !== null && !isAi && (
             <span className={matchPercent >= 70 ? "tag-pill tag-pill-emerald" : "tag-pill tag-pill-rose"} style={{ fontWeight: 700 }}>
               <CheckCircle2 size={13} /> {matchPercent}% Match
             </span>
@@ -34,16 +42,16 @@ export default function RecipeCard({ item, onSelectRecipe, isMatchMode = false }
         </h3>
 
         <p style={{ fontSize: '0.85rem', color: 'var(--text-muted)', marginBottom: '16px', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-          {recipe.description}
+          {recipe.description || (isAi ? `Custom recipe created with ${recipe.ingredients_used ? recipe.ingredients_used.join(', ') : 'available pantry items'}.` : '')}
         </p>
 
         {/* Recipe Stats */}
         <div style={{ display: 'flex', gap: '16px', fontSize: '0.85rem', color: 'var(--text-dim)', marginBottom: '16px' }}>
           <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <Clock size={14} color="#f59e0b" /> {recipe.cook_time_mins} mins
+            <Clock size={14} color="#f59e0b" /> {recipe.cook_time_mins || 20} mins
           </span>
           <span style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <Users size={14} color="#06b6d4" /> {recipe.servings} Servings
+            <Users size={14} color="#06b6d4" /> {recipe.servings || 2} Servings
           </span>
         </div>
 

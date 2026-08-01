@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import RecipeCard from './RecipeCard';
-import { Sparkles, Plus, X, Flame, ChefHat } from 'lucide-react';
+import { Sparkles, Plus, X, Flame, ChefHat, AlertCircle } from 'lucide-react';
 import { matchIngredients, fetchIngredientsList } from '../services/api';
 
 const POPULAR_STAPLES = [
@@ -12,9 +12,16 @@ const POPULAR_STAPLES = [
 export default function IngredientMatcher({ onSelectRecipe }) {
   const [selectedIngredients, setSelectedIngredients] = useState(["onion", "tomato", "toor dal"]);
   const [inputVal, setInputVal] = useState('');
-  const [matches, setMatches] = useState([]);
   const [loading, setLoading] = useState(false);
   const [availableList, setAvailableList] = useState([]);
+  
+  // Results state for handling curated, ai_generated, or error response sources
+  const [matchState, setMatchState] = useState({
+    source: 'curated',
+    matches: [],
+    aiRecipe: null,
+    errorMessage: null
+  });
 
   useEffect(() => {
     fetchIngredientsList().then(setAvailableList);
@@ -38,7 +45,7 @@ export default function IngredientMatcher({ onSelectRecipe }) {
     if (updated.length > 0) {
       handleFindRecipes(updated);
     } else {
-      setMatches([]);
+      setMatchState({ source: 'curated', matches: [], aiRecipe: null, errorMessage: null });
     }
   };
 
@@ -47,9 +54,38 @@ export default function IngredientMatcher({ onSelectRecipe }) {
     setLoading(true);
     try {
       const res = await matchIngredients(ingredientsList);
-      setMatches(res.matches || []);
+      
+      if (res.source === 'ai_generated') {
+        setMatchState({
+          source: 'ai_generated',
+          matches: [],
+          aiRecipe: res.recipe,
+          errorMessage: null
+        });
+      } else if (res.source === 'error') {
+        setMatchState({
+          source: 'error',
+          matches: [],
+          aiRecipe: null,
+          errorMessage: res.message || "Couldn't generate a recipe right now. Try adding a few more ingredients."
+        });
+      } else {
+        // Default or "curated"
+        setMatchState({
+          source: 'curated',
+          matches: res.matches || [],
+          aiRecipe: null,
+          errorMessage: null
+        });
+      }
     } catch (err) {
       console.error('Error matching ingredients:', err);
+      setMatchState({
+        source: 'error',
+        matches: [],
+        aiRecipe: null,
+        errorMessage: 'Unable to connect to recipe matching service right now.'
+      });
     } finally {
       setLoading(false);
     }
@@ -77,7 +113,7 @@ export default function IngredientMatcher({ onSelectRecipe }) {
           What ingredients do you <span className="gradient-text">have right now?</span>
         </h2>
         <p style={{ color: 'var(--text-muted)' }}>
-          Enter your pantry items (e.g. <i>onion, pyaz, toor dal</i>) — our algorithm finds the best matching recipes and highlights any gaps.
+          Enter your pantry items (e.g. <i>onion, pyaz, toor dal</i>) — our algorithm matches curated recipes or generates a custom AI recipe!
         </p>
       </div>
 
@@ -175,25 +211,56 @@ export default function IngredientMatcher({ onSelectRecipe }) {
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
           <h3 style={{ fontSize: '1.4rem', display: 'flex', alignItems: 'center', gap: '8px' }}>
             <ChefHat color="#f59e0b" size={24} /> 
-            Matched Recipes ({matches.length})
+            {matchState.source === 'ai_generated' ? 'AI-Generated Custom Recipe' : `Matched Recipes (${matchState.matches.length})`}
           </h3>
         </div>
 
         {loading ? (
           <div style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
-            Calculating ingredient match scores...
+            Calculating ingredient match scores & finding recipes...
           </div>
-        ) : matches.length === 0 ? (
+        ) : matchState.source === 'error' ? (
+          /* Inline Error State */
+          <div className="glass-card" style={{
+            background: 'rgba(244, 63, 94, 0.08)',
+            border: '1px solid rgba(244, 63, 94, 0.3)',
+            padding: '24px',
+            borderRadius: '16px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: '16px',
+            color: '#fb7185'
+          }}>
+            <AlertCircle size={28} style={{ minWidth: '28px' }} />
+            <div>
+              <strong style={{ display: 'block', fontSize: '1rem', marginBottom: '4px', color: '#fda4af' }}>
+                Notice
+              </strong>
+              <span style={{ fontSize: '0.9rem' }}>{matchState.errorMessage}</span>
+            </div>
+          </div>
+        ) : matchState.source === 'ai_generated' && matchState.aiRecipe ? (
+          /* AI-Generated Recipe Card */
+          <div style={{ maxWidth: '600px', margin: '0 auto' }}>
+            <RecipeCard
+              item={matchState.aiRecipe}
+              onSelectRecipe={onSelectRecipe}
+              isMatchMode={false}
+              isAiGenerated={true}
+            />
+          </div>
+        ) : matchState.matches.length === 0 ? (
           <div className="glass-card" style={{ textAlign: 'center', padding: '40px', color: 'var(--text-muted)' }}>
             Add a few more ingredients above to discover matching recipes!
           </div>
         ) : (
+          /* Curated Matches Grid */
           <div style={{
             display: 'grid',
             gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))',
             gap: '24px'
           }}>
-            {matches.map((item) => (
+            {matchState.matches.map((item) => (
               <RecipeCard
                 key={item.recipe.id}
                 item={item}

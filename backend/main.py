@@ -32,6 +32,7 @@ except ImportError:
     pass
 
 from backend.services.matching import match_recipes, get_all_ingredients
+from backend.llm_fallback import generate_fallback_recipe, RecipeGenerationError
 
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY") or os.getenv("SUPABASE_SERVICE_ROLE_KEY")
@@ -205,11 +206,27 @@ def match_user_ingredients(payload: MatchRequest):
     dataset = fetch_all_recipes_from_db()
     matches = match_recipes(payload.ingredients, min_match_percent=payload.min_match_percent or 30.0, recipes_list=dataset)
     
-    return {
-        "user_ingredients": payload.ingredients,
-        "total_matched_recipes": len(matches),
-        "matches": matches
-    }
+    best_match = matches[0] if matches else None
+    if best_match and best_match.get("match_percent", 0) >= 60.0:
+        return {
+            "source": "curated",
+            "recipe": best_match["recipe"],
+            "user_ingredients": payload.ingredients,
+            "total_matched_recipes": len(matches),
+            "matches": matches
+        }
+
+    try:
+        generated = generate_fallback_recipe(payload.ingredients)
+        return {
+            "source": "ai_generated",
+            "recipe": generated
+        }
+    except RecipeGenerationError:
+        return {
+            "source": "error",
+            "message": "Couldn't generate a recipe right now. Try adding a few more ingredients."
+        }
 
 @app.get("/api/ingredients")
 def list_ingredients():
