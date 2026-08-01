@@ -47,9 +47,10 @@ export default function Timer({ durationSeconds, onComplete, stepTitle, timerCom
   // Handle external voice timer commands ('start', 'pause')
   useEffect(() => {
     if (!timerCommand) return;
-    if (timerCommand === 'start' && !isFinished) {
+    const action = typeof timerCommand === 'object' ? timerCommand.action : timerCommand;
+    if (action === 'start' && !isFinished) {
       setIsRunning(true);
-    } else if (timerCommand === 'pause') {
+    } else if (action === 'pause') {
       setIsRunning(false);
     }
   }, [timerCommand, isFinished]);

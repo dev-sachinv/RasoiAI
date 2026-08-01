@@ -272,8 +272,8 @@ export default function CookingWizard({ recipe, onBack }) {
                 speakText(`Step ${currentStep.step_number || currentStepIndex + 1}. ${currentStep.instruction}`);
               }
             }}
-            onStartTimer={() => setTimerCommand('start')}
-            onPauseTimer={() => setTimerCommand('pause')}
+            onStartTimer={() => setTimerCommand({ action: 'start', id: Date.now() })}
+            onPauseTimer={() => setTimerCommand({ action: 'pause', id: Date.now() })}
           />
 
           <button 
