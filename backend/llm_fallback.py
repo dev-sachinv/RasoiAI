@@ -12,6 +12,7 @@ import os
 import json
 import re
 from typing import List, Dict, Any
+import httpx
 
 try:
     from groq import Groq
@@ -43,9 +44,10 @@ def generate_fallback_recipe(ingredients: List[str]) -> Dict[str, Any]:
         raise RecipeGenerationError("groq Python package is not installed.")
 
     try:
+        http_client = httpx.Client(verify=False)
+        client = Groq(api_key=api_key, http_client=http_client)
+    except Exception:
         client = Groq(api_key=api_key)
-    except Exception as err:
-        raise RecipeGenerationError(f"Failed to initialize Groq client: {err}")
 
     ingredients_str = ", ".join(ingredients)
     
