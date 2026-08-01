@@ -26,7 +26,7 @@ export async function fetchRecipes(query = '', region = 'All') {
   if (region && region !== 'All') {
     results = results.filter(r => r.region.toLowerCase() === region.toLowerCase());
   }
-  if (query && query.strip()) {
+  if (query && query.trim()) {
     const q = query.toLowerCase();
     results = results.filter(r => r.name.toLowerCase().includes(q) || r.category.toLowerCase().includes(q));
   }
@@ -54,7 +54,8 @@ export async function matchIngredients(ingredientsList) {
     });
     if (response.ok) {
       const data = await response.json();
-      if (data.matches) return data;
+      // Return data if backend returned source ('curated', 'ai_generated', 'error') or matches/recipe
+      if (data.source || data.matches || data.recipe) return data;
     }
   } catch (err) {
     console.warn('Backend matching connecting, running client matching engine:', err);
@@ -63,6 +64,7 @@ export async function matchIngredients(ingredientsList) {
   // Resilient fallback matching
   const matches = clientMatchIngredients(ingredientsList, 25.0);
   return {
+    source: "curated",
     user_ingredients: ingredientsList,
     total_matched_recipes: matches.length,
     matches
