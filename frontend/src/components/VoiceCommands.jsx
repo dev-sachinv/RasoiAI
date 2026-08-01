@@ -8,6 +8,7 @@ export default function VoiceCommands({
   onStartTimer,
   onPauseTimer
 }) {
+  // Listening is OFF by default for privacy & battery savings
   const [isListening, setIsListening] = useState(false);
   const [isSupported, setIsSupported] = useState(true);
   const [errorMessage, setErrorMessage] = useState('');
@@ -17,7 +18,7 @@ export default function VoiceCommands({
   const isListeningStateRef = useRef(false);
   const clearBadgeTimeoutRef = useRef(null);
 
-  // Keep ref synchronized with state for callback closures
+  // Keep ref synchronized with state
   useEffect(() => {
     isListeningStateRef.current = isListening;
   }, [isListening]);
@@ -30,16 +31,16 @@ export default function VoiceCommands({
     }, 2500);
   };
 
-  // Real-time instant command matcher
+  // Real-time sub-100ms command matcher
   const processTranscript = (rawText) => {
     if (!rawText) return;
     const text = rawText.toLowerCase().trim();
     const now = Date.now();
     
-    // Reduced 600ms cooldown for fast consecutive command execution
+    // Cooldown guard to prevent rapid multi-triggering
     if (now - lastCommandTimeRef.current < 600) return;
 
-    // 1. Pause Timer Command (checked first to prioritize pause)
+    // 1. Pause Timer Command
     if (text.includes('pause') || text.includes('stop timer') || text.includes('hold') || text.includes('wait') || text.includes('freeze')) {
       lastCommandTimeRef.current = now;
       updateBadge('⏸️ Pause Timer');
@@ -87,7 +88,7 @@ export default function VoiceCommands({
     try {
       const recognition = new SpeechRecognition();
       recognition.continuous = true;
-      recognition.interimResults = true; // Enables instant sub-100ms response!
+      recognition.interimResults = true;
       recognition.lang = 'en-US';
 
       recognition.onresult = (event) => {
@@ -107,7 +108,7 @@ export default function VoiceCommands({
       };
 
       recognition.onend = () => {
-        // Continuous auto-restart loop with a small 200ms delay so Chrome never drops the mic!
+        // Restart only if explicitly enabled by user
         if (isListeningStateRef.current) {
           setTimeout(() => {
             if (isListeningStateRef.current && recognitionRef.current) {
@@ -117,7 +118,9 @@ export default function VoiceCommands({
                 // Ignore if already active
               }
             }
-          }, 200);
+          }, 150);
+        } else {
+          setIsListening(false);
         }
       };
 
@@ -127,7 +130,9 @@ export default function VoiceCommands({
       setIsSupported(false);
     }
 
+    // Always stop microphone on unmount to protect privacy
     return () => {
+      isListeningStateRef.current = false;
       if (recognitionRef.current) {
         try {
           recognitionRef.current.onresult = null;
@@ -213,12 +218,12 @@ export default function VoiceCommands({
         {isListening ? (
           <>
             <Mic size={18} className="animate-pulse" color="#f43f5e" />
-            <span>Mic ON (Always Listening)</span>
+            <span>Listening... (Tap to Mute)</span>
           </>
         ) : (
           <>
             <MicOff size={18} />
-            <span>Voice Commands</span>
+            <span>Voice Commands (Mic OFF)</span>
           </>
         )}
       </button>
